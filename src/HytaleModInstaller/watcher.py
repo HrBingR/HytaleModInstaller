@@ -164,10 +164,65 @@ class Handler(FileSystemEventHandler):
                 print(f"[!] Also failed to archive {path.name}: {e2}", file=sys.stderr)
 
 
-def run_watcher(*, staging_dir: Path, mods_dir: Path, archive_dir: Path, failed_dir: Path) -> None:
+def process_existing(*, staging_dir: Path, mods_dir: Path, archive_dir: Path, failed_dir: Path) -> None:
+    """
+    Process any already-present .jar/.zip files in the staging dir.
+    This makes one-off usage work and also handles downloads completed while the service was down.
+    """
+    if not staging_dir.exists():
+        return
+
+    for path in sorted(staging_dir.iterdir()):
+        if not is_interesting(path):
+            continue
+        try:
+            print(f"[+] Found existing: {path.name}")
+            install_file(
+                path,
+                mods_dir=mods_dir,
+                staging_dir=staging_dir,
+                archive_dir=archive_dir,
+                failed_dir=failed_dir,
+            )
+            print(f"[✓] Installed: {path.name}")
+            archive(
+                path,
+                ok=True,
+                staging_dir=staging_dir,
+                mods_dir=mods_dir,
+                archive_dir=archive_dir,
+                failed_dir=failed_dir,
+            )
+        except Exception as e:
+            print(f"[!] Failed: {path.name}: {e}", file=sys.stderr)
+            try:
+                archive(
+                    path,
+                    ok=False,
+                    staging_dir=staging_dir,
+                    mods_dir=mods_dir,
+                    archive_dir=archive_dir,
+                    failed_dir=failed_dir,
+                    reason=str(e),
+                )
+            except Exception as e2:
+                print(f"[!] Also failed to archive {path.name}: {e2}", file=sys.stderr)
+
+
+def run_watcher(*, staging_dir: Path, mods_dir: Path, archive_dir: Path, failed_dir: Path, once: bool = False) -> None:
     ensure_dirs(staging_dir, mods_dir, archive_dir, failed_dir)
     print(f"Watching: {staging_dir}")
     print(f"Installing to: {mods_dir}")
+
+    process_existing(
+        staging_dir=staging_dir,
+        mods_dir=mods_dir,
+        archive_dir=archive_dir,
+        failed_dir=failed_dir,
+    )
+
+    if once:
+        return
 
     observer = Observer()
     observer.schedule(

@@ -28,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         help=f"Path to config TOML file (default: {default_config_path()})",
     )
+    p.add_argument(
+        "--once",
+        action="store_true",
+        help="Process existing files in staging dir and exit (no watching)",
+    )
 
     sub = p.add_subparsers(dest="cmd", required=False)
 
@@ -76,6 +81,7 @@ def main() -> None:
             mods_dir=mods_dir,
             archive_dir=archive_dir,
             failed_dir=failed_dir,
+            once=args.once,
         )
         return
 
