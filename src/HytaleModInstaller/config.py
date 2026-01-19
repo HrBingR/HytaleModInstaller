@@ -3,17 +3,84 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import shutil
+import subprocess
+
 from platformdirs import user_config_dir
 import tomllib
 
 
 APP_NAME = "hytalemodinstaller"
+SERVICE_NAME = f"{APP_NAME}.service"
 
 DEFAULT_STAGING_DIR = Path.home() / "Downloads" / "HytaleMods"
 DEFAULT_MODS_DIR = (
         Path.home()
         / ".var/app/com.hypixel.HytaleLauncher/data/Hytale/UserData/Mods"
 )
+
+
+def systemd_user_unit_path() -> Path:
+    return Path.home() / ".config" / "systemd" / "user" / SERVICE_NAME
+
+
+# noinspection PyDeprecation
+def find_executable() -> str:
+    exe = shutil.which(APP_NAME)
+    if not exe:
+        raise SystemExit(f"Could not find '{APP_NAME}' on PATH. Is it installed?")
+    return exe
+
+
+def write_systemd_user_service(*, exec_start: str) -> Path:
+    unit_path = systemd_user_unit_path()
+    unit_path.parent.mkdir(parents=True, exist_ok=True)
+
+    unit_text = (
+        "[Unit]\n"
+        f"Description={APP_NAME} watcher\n"
+        "\n"
+        "[Service]\n"
+        "Type=simple\n"
+        f"ExecStart={exec_start} run\n"
+        "Restart=on-failure\n"
+        "RestartSec=2\n"
+        "Environment=PYTHONUNBUFFERED=1\n"
+        "NoNewPrivileges=true\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=default.target\n"
+    )
+    unit_path.write_text(unit_text, encoding="utf-8")
+    return unit_path
+
+
+def _systemctl_user(*args: str) -> None:
+    subprocess.run(["systemctl", "--user", *args], check=True)
+
+
+def _journalctl_user(*args: str) -> None:
+    subprocess.run(["journalctl", "--user", *args], check=True)
+
+
+def install_user_service() -> Path:
+    exe = find_executable()
+    unit_path = write_systemd_user_service(exec_start=exe)
+    _systemctl_user("daemon-reload")
+    _systemctl_user("enable", "--now", SERVICE_NAME)
+    return unit_path
+
+
+def uninstall_user_service() -> None:
+    _systemctl_user("disable", "--now", SERVICE_NAME)
+    unit_path = systemd_user_unit_path()
+    if unit_path.exists():
+        unit_path.unlink()
+    _systemctl_user("daemon-reload")
+
+
+def follow_user_service_logs() -> None:
+    _journalctl_user("-u", SERVICE_NAME, "-f")
 
 
 def default_config_path() -> Path:
@@ -60,6 +127,19 @@ def run_install_wizard(config_path: Path) -> None:
     print(f"  staging_dir: {staging_dir}")
     print(f"  mods_dir:    {mods_dir}")
     print(f"Config file: {config_path}")
+
+    answer = input("\nInstall and start a systemd *user* service to run at login? [y/N]: ").strip().lower()
+    if answer in ("y", "yes"):
+        try:
+            unit_path = install_user_service()
+            print(f"Installed and started: {SERVICE_NAME}")
+            print(f"Unit file: {unit_path}")
+            print(f"View logs: systemctl --user status {SERVICE_NAME} && journalctl --user -u {SERVICE_NAME} -f")
+        except FileNotFoundError:
+            print("systemctl/journalctl not found. Skipping service install.")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to install service (systemctl exit code {e.returncode}).")
+            print(f"You can try manually: systemctl --user enable --now {SERVICE_NAME}")
 
 
 def resolve_paths(args: argparse.Namespace, *, config_path: Path) -> tuple[Path, Path, Path, Path]:
