@@ -1,6 +1,6 @@
 [project]
 name = "hytalemodinstaller"
-version = "1.0.1"
+version = "1.0.2"
 description = "A python tool and service to automate Hytale mod installation on Linux"
 requires-python = ">=3.11"
 dependencies = [
