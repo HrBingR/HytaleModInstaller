@@ -4,7 +4,6 @@ from __future__ import annotations
 import shutil
 import sys
 import time
-import zipfile
 from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
@@ -48,16 +47,6 @@ def wait_for_stable_size(path: Path, timeout: float = POLL_TIMEOUT_SECONDS) -> b
     return False
 
 
-def safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
-    with zipfile.ZipFile(zip_path) as zf:
-        for member in zf.infolist():
-            # zip-slip protection
-            member_path = Path(member.filename)
-            if member_path.is_absolute() or ".." in member_path.parts:
-                raise RuntimeError(f"Unsafe path in zip: {member.filename}")
-        zf.extractall(dest_dir)
-
-
 def ensure_dirs(staging_dir: Path, mods_dir: Path, archive_dir: Path, failed_dir: Path) -> None:
     for d in (staging_dir, mods_dir, archive_dir, failed_dir):
         d.mkdir(parents=True, exist_ok=True)
@@ -77,16 +66,12 @@ def install_file(
         raise RuntimeError("Timed out waiting for download to finish")
 
     suffix = path.suffix.lower()
-    if suffix == ".jar":
+    if suffix in (".jar", ".zip"):
         target = mods_dir / path.name
         if target.exists():
             stamp = time.strftime("%Y%m%d-%H%M%S")
             target = mods_dir / f"{path.stem}-{stamp}{path.suffix}"
         shutil.copy2(path, target)
-        return
-
-    if suffix == ".zip":
-        safe_extract_zip(path, mods_dir)
         return
 
 
